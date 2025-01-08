@@ -1,6 +1,6 @@
 ##
-## Version 0.9.5
-## Jan 7th 2025 @ 3:56 PM EST
+## Version 1.0.0
+## Jan 7th 2025 @ 6:50 PM EST
 from io import BytesIO
 from enum import Enum
 import configparser
