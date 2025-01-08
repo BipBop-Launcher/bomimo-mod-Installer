@@ -9,10 +9,12 @@ import platform
 import requests
 import zipfile
 import shutil
+import sys
 import os
 
 #https://svn.blender.org/svnroot/bf-blender/trunk/blender/build_files/scons/tools/bcolors.py
 class bcolors:
+    BLACK = '\033[30m'
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
     OKCYAN = '\033[96m'
@@ -27,8 +29,10 @@ class bcolors:
 
 class exit_result:
     Bopimo_Not_Installed = -10
-    Update_Check_Failed = -9
-    Download_Failed = -8
+    Fetch_Latest_Failed = -9
+    Update_Check_Failed = -8
+    Download_Failed = -7
+    Extraction_Failed = -6
 
     Uninstall_Failed = -5
     Reinstall_Failed = -4
@@ -56,14 +60,14 @@ parser.add_argument('-u', '--uninstall', action='store_true')
 parser.add_argument('--skip-bopistrap', action='store_true')
 run_args = parser.parse_args()
 
-INSTALLER_VERSION = "0.9.5"
+INSTALLER_VERSION = "1.0.0"
 OS = platform.system()
 
 path = ""
 if OS == "Windows":
     path = f'{os.environ["APPDATA"]}/Bopimo!/Client/'.replace("\\", "/")
 elif OS == "Linux":
-    path = f'{os.environ["HOME"]}/.local/Bopimo!/Client/'
+    path = f'{os.environ["HOME"]}/.local/share/Bopimo!/Client/'
 
 ## Functions
 def sprint(*args, sep=' ', end='\n'):
@@ -86,25 +90,38 @@ def get_latest_release(type = "file"):
             rzip = requests.get(r.json()["file"])
             if rzip.status_code == 200:
                 return zipfile.ZipFile(BytesIO(rzip.content), "r")
+            else:
+                sys.exit(exit_result.Download_Failed)
         else:
             return r.json()["version"]
+    else:
+        sys.exit(exit_result.Fetch_Latest_Failed)
+
     return None
 
 def update_override(section, key, value):
     config_path = f'{path}override.cfg'
     config = configparser.ConfigParser()
+    config.optionxform = str
     config.read(config_path)
 
-    before = config[section][key]
+    before = None
+    if section in config:
+        if key in config[section]:
+            before = config[section][key]
     config.set(section, key, value)
-    sprint(f'{before} -> {config[section][key]}')
-    
+    if before:
+        sprint(f'\033[43m{bcolors.BLACK}~ {before} -> {config[section][key]}{bcolors.ENDC}')
+    else:
+        sprint(f'\033[42m{bcolors.BLACK}+ {bcolors.HEADER}[{section}]{bcolors.BLACK}: {key}{bcolors.BLACK} = {config[section][key]}{bcolors.ENDC}')
+
     with open(config_path, 'w') as configfile:
         config.write(configfile)
     
 def get_override_section(section):
     config_path = f'{path}override.cfg'
     config = configparser.ConfigParser()
+    config.optionxform = str
     config.read(config_path)
 
     return config[section]
@@ -112,6 +129,7 @@ def get_override_section(section):
 def get_override_value(section, key): #rename function?
     config_path = f'{path}override.cfg'
     config = configparser.ConfigParser()
+    config.optionxform = str
     config.read(config_path)
 
     return config[section][key]
@@ -156,6 +174,7 @@ def install(skip_bopistrap = False):
         sprint(f'Installing to {bcolors.UNDERLINE}"{path}"{bcolors.ENDC}')
         modloader.extractall(f'{path}')
         update_override('application', 'run/main_scene', f'"{path}GUMM_mod_loader.tscn"')
+        update_override('application', 'boot_splash/image', f'"{path}ModdedIcon.png"')
          
         #Create symlinks for Bopistrap
         if has_bopistrap() and not skip_bopistrap:
@@ -163,11 +182,7 @@ def install(skip_bopistrap = False):
             sprint(f'Creating symlink for {bcolors.BOLD+bcolors.HEADER}Bopistrap{bcolors.ENDC}')
 
             remove_file(f'{bopistap_client_path}override.cfg')
-            remove_file(f'{bopistap_client_path}GUMM_mod_loader.tscn')
-            remove_file(f'{bopistap_client_path}GUMM_mod_loader.tscn')
-            os.symlink(f'{path}override.cfg', f'{bopistap_client_path}override.cfg', target_is_directory = False) 
-            os.symlink(f'{path}GUMM_mod_loader.tscn' , f'{bopistap_client_path}GUMM_mod_loader.tscn', target_is_directory = False)
-            os.symlink(f'{path}ModdedIcon.png' , f'{bopistap_client_path}ModdedIcon.png', target_is_directory = False)
+            os.symlink(f'{path}override.cfg', f'{bopistap_client_path}override.cfg', target_is_directory = False)
 
         return True
     else:
@@ -177,13 +192,14 @@ def update():
     """Updates Bopimod to the latest version."""
     autoloads = get_override_section('autoload')
     install(True)
+    #sprint(autoloads)
+    for autoload in autoloads:
+        update_override("autoload", autoload, autoloads[autoload])
 
 def uninstall():
     if has_bopistrap():
         bopistap_client_path = f'{os.environ["LOCALAPPDATA"]}/Bopistrap/Client/'.replace("\\", "/")
         remove_file(f'{bopistap_client_path}override.cfg')
-        remove_file(f'{bopistap_client_path}GUMM_mod_loader.tscn')
-        remove_file(f'{bopistap_client_path}GUMM_mod_loader.tscn')
 
     remove_folder(f'{path}mods/')
     remove_file(f'{path}ModdedIcon.png')
@@ -196,7 +212,7 @@ def main():
     #Check that Bopimo! is installed
     if not os.path.exists(path): 
         sprint(f'{bcolors.FAIL}You don\'t have Bopimo! installed. Exiting...{bcolors.ENDC}')
-        exit(exit_result.Bopimo_Not_Installed)
+        sys.exit(exit_result.Bopimo_Not_Installed)
 
     if already_installed() and not run_args.reinstall:
         if not run_args.uninstall: #Update Mode
@@ -212,34 +228,34 @@ def main():
                 sprint(f'New {update_type} update found!')
                 update()
                 sprint(f'{bcolors.FAIL}Bopimod!{bcolors.OKGREEN} has been updated.{bcolors.ENDC}')
-                exit(exit_result.Update_Sucess)
+                sys.exit(exit_result.Update_Sucess)
 
             else:
                 sprint('No updates found. Exiting...')
-                exit(exit_result.Unchanged)
+                sys.exit(exit_result.Unchanged)
 
         else: #Remove Mode
             sprint(f'{bcolors.BOLD+bcolors.HEADER}Bopimo! {bcolors.FAIL}Mod Loader Uninstaller {bcolors.OKCYAN}v{INSTALLER_VERSION}{bcolors.ENDC}')
             sprint("Uninstalling...")
             uninstall()
             sprint(f'{bcolors.FAIL}Bopimod!{bcolors.OKGREEN} has been removed.{bcolors.ENDC}')
-            exit(exit_result.Uninstall_Sucess)
+            sys.exit(exit_result.Uninstall_Sucess)
 
     elif run_args.reinstall: #Reinstall Mode
-        sprint("Reinstalling Bopimod...")
+        sprint(f'Reinstalling {bcolors.FAIL}Bopimod{bcolors.ENDC}...')
         install()
-        #exit(exit_result.Reinstall_Sucess)
+        #sys.exit(exit_result.Reinstall_Sucess)
         
     elif not run_args.uninstall: #Install Mode
         sprint(f'{bcolors.BOLD+bcolors.HEADER}Bopimo! {bcolors.FAIL}Mod Loader Installer {bcolors.OKCYAN}v{INSTALLER_VERSION}{bcolors.ENDC}')
         install(run_args.skip_bopistrap)
         sprint(f'{bcolors.FAIL}Bopimod!{bcolors.OKGREEN} has been installed.{bcolors.ENDC}')
-        exit(exit_result.Install_Sucess)
+        sys.exit(exit_result.Install_Sucess)
     
     else:
         sprint("There is nothing to uninstall.")
         sprint("If there IS an install. You might need to reinstall the mod loader")
-        exit(exit_result.Unchanged)
+        sys.exit(exit_result.Unchanged)
         
 if __name__ == "__main__":
     main()
