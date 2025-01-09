@@ -252,7 +252,7 @@ def main():
     elif run_args.reinstall: #Reinstall Mode
         silent_print(f'Reinstalling {bcolors.FAIL}Bopimod{bcolors.ENDC}...')
         install()
-        #silent_exit(exit_result.Reinstall_Sucess)
+        silent_exit(exit_result.Reinstall_Sucess)
         
     elif not run_args.uninstall: #Install Mode
         silent_print(f'{bcolors.BOLD+bcolors.HEADER}Bopimo! {bcolors.FAIL}Mod Loader Installer {bcolors.OKCYAN}v{INSTALLER_VERSION}{bcolors.ENDC}')
